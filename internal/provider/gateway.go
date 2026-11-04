@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -155,7 +156,7 @@ func (g *gateway) Generate(ctx context.Context, req Request) (*Result, error) {
 }
 
 func (g *gateway) generateChat(ctx context.Context, req Request) (*Result, error) {
-	return chatImageGenerate(ctx, chatImageConfig{
+	res, err := chatImageGenerate(ctx, chatImageConfig{
 		Provider:   "AI Gateway",
 		Name:       "gateway",
 		Source:     g.cfg.Source,
@@ -164,6 +165,87 @@ func (g *gateway) generateChat(ctx context.Context, req Request) (*Result, error
 		MaxRetries: g.cfg.MaxRetries,
 		Client:     g.cfg.HTTP,
 	}, req)
+	// Quiver Arrow models answer with SVG markup in the text.
+	if err == nil && len(res.Images) == 0 && strings.HasPrefix(req.Model, "quiverai/") {
+		if svg := ExtractSVG(res.Text); svg != "" {
+			res.Images = append(res.Images, Image{Data: []byte(svg), MediaType: "image/svg+xml"})
+			res.Text = ""
+		}
+	}
+	return res, err
+}
+
+var svgOpen = regexp.MustCompile(`(?i)<svg[\s/>]`)
+
+// ExtractSVG returns the longest complete <svg>…</svg> element in text.
+func ExtractSVG(text string) string {
+	best := ""
+	for _, loc := range svgOpen.FindAllStringIndex(text, -1) {
+		if svg := svgAt(text, loc[0]); len(svg) > len(best) {
+			best = svg
+		}
+	}
+	return best
+}
+
+func svgAt(text string, start int) string {
+	depth := 0
+	lower := strings.ToLower(text)
+	for i := start; i < len(text); {
+		lt := strings.IndexByte(text[i:], '<')
+		if lt < 0 {
+			return ""
+		}
+		i += lt
+		if strings.HasPrefix(text[i:], "<!--") {
+			end := strings.Index(text[i+4:], "-->")
+			if end < 0 {
+				return ""
+			}
+			i += 4 + end + 3
+			continue
+		}
+		end := markupEnd(text, i+1)
+		if end < 0 {
+			return ""
+		}
+		tag := lower[i : end+1]
+		switch {
+		case svgOpen.MatchString(tag) && strings.HasPrefix(tag, "<svg"):
+			if strings.HasSuffix(strings.TrimSpace(strings.TrimSuffix(tag, ">")), "/") {
+				if depth == 0 {
+					return text[start : end+1]
+				}
+			} else {
+				depth++
+			}
+		case strings.HasPrefix(tag, "</svg"):
+			depth--
+			if depth == 0 {
+				return text[start : end+1]
+			}
+		}
+		i = end + 1
+	}
+	return ""
+}
+
+func markupEnd(text string, from int) int {
+	var quote byte
+	for i := from; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '>':
+			return i
+		}
+	}
+	return -1
 }
 
 func gatewayFile(data []byte, mediaType, u string) map[string]any {

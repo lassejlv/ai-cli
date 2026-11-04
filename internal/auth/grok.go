@@ -41,7 +41,7 @@ type grokDiscovery struct {
 func discoverGrok(ctx context.Context) (grokDiscovery, error) {
 	issuer := grokIssuer()
 	d := grokDiscovery{
-		AuthorizationEndpoint: issuer + "/oauth2/auth",
+		AuthorizationEndpoint: issuer + "/oauth2/authorize",
 		TokenEndpoint:         issuer + "/oauth2/token",
 		DeviceEndpoint:        issuer + "/oauth2/device/code",
 	}

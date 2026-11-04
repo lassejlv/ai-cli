@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 
@@ -525,13 +524,4 @@ func printTable(rows [][]string) {
 		}
 		fmt.Println(line)
 	}
-}
-
-func sortedKeys[M ~map[string]V, V any](m M) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

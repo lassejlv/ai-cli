@@ -508,3 +508,14 @@ func TestMergeDeep(t *testing.T) {
 		t.Fatalf("merge = %v", got)
 	}
 }
+
+func TestExtractSVG(t *testing.T) {
+	text := "Here: <svg width=\"2\"><g><svg/></g><text>a > b</text></svg> done <svg></svg>"
+	got := ExtractSVG(text)
+	if got != `<svg width="2"><g><svg/></g><text>a > b</text></svg>` {
+		t.Fatalf("got %q", got)
+	}
+	if ExtractSVG("no markup") != "" {
+		t.Fatal("expected empty")
+	}
+}

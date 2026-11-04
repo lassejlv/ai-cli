@@ -1,0 +1,5 @@
+ai-cli (Go)
+
+This project is a Go port of the image generation part of ai-cli
+(https://github.com/vercel-labs/ai-cli), Copyright Vercel, Inc.,
+licensed under the Apache License, Version 2.0.
