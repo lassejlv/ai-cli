@@ -454,6 +454,33 @@ func writeCallbackPage(w http.ResponseWriter, ok bool, msg string) {
 // WriteCodexCLIAuth updates the tokens in Codex CLI's auth.json in place,
 // preserving every other field, so refreshed tokens stay valid for Codex too.
 func WriteCodexCLIAuth(c Credential) error {
+	return withFileLock(CodexCLIAuthPath(), func() error { return writeCodexCLIAuth(c) })
+}
+
+// RefreshCodexCLI refreshes the Codex CLI's tokens under a lock, reusing
+// tokens that another process (or Codex itself) refreshed in the meantime.
+func RefreshCodexCLI(current Credential, force bool, expiring func(Credential) bool, refresh RefreshFunc) (Credential, error) {
+	var result Credential
+	err := withFileLock(CodexCLIAuthPath(), func() error {
+		stored, err := ReadCodexCLIAuth()
+		if err != nil {
+			return err
+		}
+		if (stored.AccessToken != current.AccessToken || !force) && !expiring(stored) {
+			result = stored
+			return nil
+		}
+		next, err := refresh(stored)
+		if err != nil {
+			return err
+		}
+		result = next
+		return writeCodexCLIAuth(next)
+	})
+	return result, err
+}
+
+func writeCodexCLIAuth(c Credential) error {
 	path := CodexCLIAuthPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -485,9 +512,5 @@ func WriteCodexCLIAuth(c Credential) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".ai-cli.tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return writeFileAtomic(path, out)
 }

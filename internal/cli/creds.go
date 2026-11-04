@@ -81,6 +81,15 @@ func resolveConfig(info *provider.Info, account string, ov Overrides) (provider.
 		return cfg, ra, fmt.Errorf("no %s account named %q; saved accounts: %s (run `ai login %s --account %s`)",
 			info.Name, account, joinOrNone(f.AccountNames(info.Name)), info.Name, account)
 	}
+	if ok && cred.Link == "codex-cli" && info.Name == "codex" {
+		linked, err := auth.ReadCodexCLIAuth()
+		if err != nil {
+			return cfg, ra, fmt.Errorf("codex account %q is linked to the Codex CLI login, which could not be read: %w", name, err)
+		}
+		useCodexCLI(&cfg, &ra, linked)
+		ra.Account = name
+		return cfg, ra, nil
+	}
 	if ok {
 		ra.Account, ra.Source = name, "login"
 		cfg.Source = "login"
@@ -92,8 +101,8 @@ func resolveConfig(info *provider.Info, account string, ov Overrides) (provider.
 			c := cred
 			cfg.OAuth = &c
 			providerName, accountName := info.Name, name
-			cfg.SaveOAuth = func(updated auth.Credential) error {
-				return auth.Replace(providerName, accountName, updated)
+			cfg.RefreshOAuth = func(current auth.Credential, force bool, expiring func(auth.Credential) bool, refresh auth.RefreshFunc) (auth.Credential, error) {
+				return auth.RefreshStored(providerName, accountName, current, force, expiring, refresh)
 			}
 		}
 		splitKeypair(info, &cfg)
@@ -103,14 +112,20 @@ func resolveConfig(info *provider.Info, account string, ov Overrides) (provider.
 	// Fall back to the tokens written by the official Codex CLI.
 	if info.Name == "codex" {
 		if cred, err := auth.ReadCodexCLIAuth(); err == nil {
-			c := cred
-			cfg.OAuth = &c
-			cfg.Source, ra.Source, ra.Account = "codex-cli", "codex-cli", "codex-cli"
-			cfg.SaveOAuth = auth.WriteCodexCLIAuth
+			useCodexCLI(&cfg, &ra, cred)
 			return cfg, ra, nil
 		}
 	}
 	return cfg, ra, nil
+}
+
+// useCodexCLI points a config at the Codex CLI's auth.json; refreshed tokens
+// are written back there so both tools keep working.
+func useCodexCLI(cfg *provider.Config, ra *ResolvedAccount, cred auth.Credential) {
+	c := cred
+	cfg.OAuth = &c
+	cfg.Source, ra.Source, ra.Account = "codex-cli", "codex-cli", "codex-cli"
+	cfg.RefreshOAuth = auth.RefreshCodexCLI
 }
 
 func splitKeypair(info *provider.Info, cfg *provider.Config) {
@@ -194,6 +209,8 @@ func ParseModelSpec(raw, defProvider, defAccount string) (ModelSpec, error) {
 	provName, account, hasAt := strings.Cut(head, "@")
 	if _, known := provider.Lookup(provName); known && (hasColon || hasAt || !strings.Contains(raw, "/")) {
 		spec.Provider = strings.ToLower(provName)
+		// --account only applies to unprefixed models.
+		spec.Account = ""
 		if hasAt {
 			if account == "" {
 				return spec, fmt.Errorf("empty account in model %q", raw)

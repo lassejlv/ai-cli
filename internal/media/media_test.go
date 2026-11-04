@@ -56,3 +56,16 @@ func TestExtension(t *testing.T) {
 		t.Fatal("Extension mapping wrong")
 	}
 }
+
+func TestBMPNeedsRealHeader(t *testing.T) {
+	if IsImage([]byte("BMW M3 in the rain, cinematic lighting")) {
+		t.Fatal(`text starting with "BM" is not a BMP`)
+	}
+	bmp := make([]byte, 58)
+	copy(bmp, "BM")
+	bmp[2] = 58
+	bmp[14] = 40
+	if Detect(bmp) != "image/bmp" {
+		t.Fatal("valid BMP header not detected")
+	}
+}

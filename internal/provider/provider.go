@@ -98,10 +98,16 @@ type Config struct {
 	HTTP       *http.Client
 	// Source describes where credentials came from (env, login, codex-cli).
 	Source string
-	// OAuth holds subscription tokens (Codex) and SaveOAuth persists refreshes.
-	OAuth     *auth.Credential
-	SaveOAuth func(auth.Credential) error
+	// OAuth holds subscription tokens (Codex, Grok). RefreshOAuth refreshes
+	// them in the backing store under a cross-process lock; when nil, tokens
+	// are refreshed in memory only.
+	OAuth        *auth.Credential
+	RefreshOAuth OAuthRefresher
 }
+
+// OAuthRefresher refreshes stored OAuth tokens, reusing tokens another
+// process refreshed meanwhile.
+type OAuthRefresher func(current auth.Credential, force bool, expiring func(auth.Credential) bool, refresh auth.RefreshFunc) (auth.Credential, error)
 
 var registry = map[string]*Info{}
 

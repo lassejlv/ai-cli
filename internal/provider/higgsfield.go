@@ -175,7 +175,7 @@ func (h *higgsfield) Generate(ctx context.Context, req Request) (*Result, error)
 	case "completed":
 	case "nsfw":
 		return nil, errors.New("Higgsfield rejected the request as NSFW")
-	case "failed", "canceled":
+	case "failed", "canceled", "cancelled":
 		msg := job.Error
 		if msg == "" {
 			msg = job.Status
@@ -226,7 +226,7 @@ func (h *higgsfield) publicURL(ctx context.Context, img media.Image) (string, er
 	}
 	res, err := do(ctx, call{
 		Provider: "Higgsfield", URL: h.base() + "/files/generate-upload-url", Headers: h.authHeaders(nil),
-		JSON: map[string]any{"content_type": mediaType}, MaxRetries: h.cfg.MaxRetries, Client: h.cfg.HTTP,
+		JSON: map[string]any{"content_type": mediaType}, MaxRetries: h.cfg.MaxRetries, Client: h.cfg.HTTP, Idempotent: true,
 	})
 	if err != nil {
 		return "", authCheck("higgsfield", h.cfg.Source, err)

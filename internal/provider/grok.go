@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -48,20 +47,25 @@ func (g *grok) MaxImagesPerCall(string) int { return 10 }
 func (g *grok) credential(ctx context.Context, force bool) (auth.Credential, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if !force && !auth.TokenExpiring(g.cred.AccessToken, 5*time.Minute) {
+	expiring := func(c auth.Credential) bool { return auth.TokenExpiring(c.AccessToken, 5*time.Minute) }
+	if !force && !expiring(g.cred) {
 		return g.cred, nil
 	}
-	refreshed, err := auth.RefreshGrok(ctx, g.cred)
+	refresh := func(c auth.Credential) (auth.Credential, error) { return auth.RefreshGrok(ctx, c) }
+	var (
+		next auth.Credential
+		err  error
+	)
+	if g.cfg.RefreshOAuth != nil {
+		next, err = g.cfg.RefreshOAuth(g.cred, force, expiring, refresh)
+	} else {
+		next, err = refresh(g.cred)
+	}
 	if err != nil {
 		return g.cred, err
 	}
-	g.cred = refreshed
-	if g.cfg.SaveOAuth != nil {
-		if err := g.cfg.SaveOAuth(refreshed); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not save refreshed Grok tokens: %v\n", err)
-		}
-	}
-	return refreshed, nil
+	g.cred = next
+	return next, nil
 }
 
 func (g *grok) client(cred auth.Credential) *openAICompat {

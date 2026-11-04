@@ -252,7 +252,7 @@ func modelOptions(s *tuiState) []huh.Option[string] {
 			found = true
 		}
 	}
-	if s.model != "" && !found {
+	if s.model != "" && s.model != customModel && !found {
 		s.customModel = s.model
 		s.model = customModel
 	}

@@ -20,14 +20,15 @@ func init() {
 		New:          newGoogle,
 		Aliases: map[string]string{
 			"nano-banana":     "gemini-2.5-flash-image",
+			"nano-banana-2":   "gemini-3.1-flash-image",
 			"nano-banana-pro": "gemini-3-pro-image-preview",
 		},
+		// Imagen models (imagen-*) still route to :predict, but Google shut
+		// Imagen 4 down on the Gemini API, so they are not listed.
 		Models: []ModelInfo{
 			{ID: "gemini-2.5-flash-image", Description: "alias: nano-banana"},
+			{ID: "gemini-3.1-flash-image", Description: "alias: nano-banana-2"},
 			{ID: "gemini-3-pro-image-preview", Description: "alias: nano-banana-pro"},
-			{ID: "imagen-4.0-generate-001"},
-			{ID: "imagen-4.0-ultra-generate-001"},
-			{ID: "imagen-4.0-fast-generate-001"},
 		},
 	})
 }

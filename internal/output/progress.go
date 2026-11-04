@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -69,8 +70,9 @@ func (p *Progress) Add(text string) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lines = append(p.lines, &line{text: text, pos: -shimmerPad})
-	if !p.quiet && p.tty && p.stop == nil {
+	if !p.quiet && p.tty && p.stop == nil && !p.stopped {
 		p.stop = make(chan struct{})
+		fmt.Fprint(p.w, "\x1b[?25l")
 		go p.loop()
 	}
 	return len(p.lines) - 1
@@ -121,9 +123,20 @@ func (p *Progress) Close() {
 	p.stopped = true
 	if p.stop != nil {
 		close(p.stop)
-		p.render()
+		// The live region only holds single-row lines; print the full final
+		// text once, now that nothing redraws over it.
+		p.erase()
+		var b strings.Builder
+		for _, l := range p.lines {
+			text := l.final
+			if l.state != done {
+				text = l.text
+			}
+			b.WriteString(text + "\x1b[K\n")
+		}
+		b.WriteString("\x1b[J\x1b[?25h")
+		fmt.Fprint(p.w, b.String())
 		p.rendered = 0
-		fmt.Fprint(p.w, "\x1b[?25h")
 	}
 }
 
@@ -142,7 +155,6 @@ func (p *Progress) Println(msg string) {
 }
 
 func (p *Progress) loop() {
-	fmt.Fprint(p.w, "\x1b[?25l")
 	t := time.NewTicker(60 * time.Millisecond)
 	defer t.Stop()
 	for {
@@ -175,7 +187,8 @@ func (p *Progress) render() {
 	for _, l := range p.lines {
 		switch l.state {
 		case done:
-			b.WriteString(l.final + "\x1b[K\n")
+			// Keep every live row to one screen line so erase() stays exact.
+			b.WriteString(truncateEnd(oneLine(l.final), cols-1) + "\x1b[K\n")
 		case queued:
 			text := truncate(l.text+" (queued)", cols-1)
 			if p.color {
@@ -206,6 +219,37 @@ func truncate(s string, width int) string {
 	}
 	r := []rune(s)
 	return "…" + string(r[len(r)-width+1:])
+}
+
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// truncateEnd cuts text to width visible columns, keeping ANSI color codes.
+func truncateEnd(s string, width int) string {
+	if width <= 0 || utf8.RuneCountInString(ansiRE.ReplaceAllString(s, "")) <= width {
+		return s
+	}
+	var b strings.Builder
+	visible := 0
+	for i := 0; i < len(s); {
+		if loc := ansiRE.FindStringIndex(s[i:]); loc != nil && loc[0] == 0 {
+			b.WriteString(s[i : i+loc[1]])
+			i += loc[1]
+			continue
+		}
+		if visible == width-1 {
+			b.WriteString("…\x1b[0m")
+			break
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		b.WriteRune(r)
+		visible++
+		i += size
+	}
+	return b.String()
 }
 
 const shimmerPad = 8

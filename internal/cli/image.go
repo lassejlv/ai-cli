@@ -310,6 +310,13 @@ func buildRun(ctx context.Context, f *imageFlags, prompt string, stdinImage *med
 	if err != nil {
 		return opts, nil, err
 	}
+	if f.baseURL != "" {
+		for _, spec := range specs[1:] {
+			if spec.Provider != specs[0].Provider {
+				return opts, nil, errors.New("--base-url applies to every model; use it with models from a single provider so credentials are not sent to the wrong host")
+			}
+		}
+	}
 	if opts.Mode == ModeRaw && (len(specs) > 1 || f.n > 1) {
 		return opts, nil, errors.New("--raw writes a single image; use --base64 or --data-url for multiple images")
 	}

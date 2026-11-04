@@ -159,40 +159,39 @@ type preparedModel struct {
 	err     error
 }
 
-// prepare instantiates providers for each spec. Specs that share a provider
-// and account share one instance, so OAuth refresh tokens rotate only once.
+// prepare instantiates providers for each spec. Specs that resolve to the
+// same credentials share one instance, so OAuth refresh tokens rotate once.
 func prepare(specs []ModelSpec, ov Overrides) []preparedModel {
 	out := make([]preparedModel, len(specs))
-	cache := map[string]preparedModel{}
+	cache := map[string]provider.Provider{}
 	for i, spec := range specs {
-		key := spec.Provider + "@" + spec.Account
-		m, ok := cache[key]
+		m := preparedModel{spec: spec}
+		info, ok := provider.Lookup(spec.Provider)
 		if !ok {
-			m = prepareOne(spec, ov)
-			cache[key] = m
+			m.err = fmt.Errorf("unknown provider %q", spec.Provider)
+			out[i] = m
+			continue
 		}
-		m.spec = spec
+		cfg, ra, err := resolveConfig(info, spec.Account, ov)
+		m.account = ra
+		if err != nil {
+			m.err = err
+			out[i] = m
+			continue
+		}
+		key := spec.Provider + "|" + ra.Source + "|" + ra.Account
+		if impl, ok := cache[key]; ok {
+			m.impl = impl
+		} else {
+			cfg.HTTP = &http.Client{}
+			m.impl, m.err = info.New(cfg)
+			if m.err == nil {
+				cache[key] = m.impl
+			}
+		}
 		out[i] = m
 	}
 	return out
-}
-
-func prepareOne(spec ModelSpec, ov Overrides) preparedModel {
-	m := preparedModel{spec: spec}
-	info, ok := provider.Lookup(spec.Provider)
-	if !ok {
-		m.err = fmt.Errorf("unknown provider %q", spec.Provider)
-		return m
-	}
-	cfg, ra, err := resolveConfig(info, spec.Account, ov)
-	m.account = ra
-	if err != nil {
-		m.err = err
-		return m
-	}
-	cfg.HTTP = &http.Client{}
-	m.impl, m.err = info.New(cfg)
-	return m
 }
 
 // providerOptionsFor returns the options passed to one provider.
@@ -270,7 +269,7 @@ func Run(ctx context.Context, specs []ModelSpec, opts RunOptions) *RunResult {
 		total += len(r.Images)
 	}
 	multiple := len(models) > 1 || opts.N > 1 || total > 1
-	showPreview := opts.Preview && !opts.JSON && opts.Mode != ModeRaw && opts.StdoutIsTTY && output.SupportsKitty()
+	showPreview := opts.Preview && !opts.JSON && opts.Mode != ModeRaw && opts.StdoutIsTTY && output.IsTTY(os.Stderr) && output.SupportsKitty()
 	outDir := opts.Output
 	if outDir == "" {
 		outDir = os.Getenv("AI_CLI_OUTPUT_DIR")

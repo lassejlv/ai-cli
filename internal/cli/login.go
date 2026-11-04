@@ -81,7 +81,7 @@ Each provider can hold several accounts; use --account to name them.`,
 	fl.StringVar(&f.account, "account", "", "Account name to save under (default: \"default\")")
 	fl.BoolVar(&f.noBrowser, "no-browser", false, "Do not open a browser")
 	fl.BoolVar(&f.device, "device", false, "Use the device-code flow (codex, grok)")
-	fl.BoolVar(&f.importCLI, "import", false, "codex: import tokens from ~/.codex/auth.json")
+	fl.BoolVar(&f.importCLI, "import", false, "codex: use the Codex CLI login in ~/.codex/auth.json (linked, refreshes are shared)")
 	fl.StringVar(&f.baseURL, "base-url", "", "Custom API base URL saved with the account (e.g. an OpenAI-compatible server)")
 	fl.StringVar(&f.apiKey, "api-key", "", "API key (non-interactive; prefer stdin to keep it out of shell history)")
 	fl.StringVar(&f.apiSecret, "api-secret", "", "API key secret (higgsfield)")
@@ -113,7 +113,12 @@ func runLogin(ctx context.Context, info *provider.Info, f *loginFlags) error {
 		}
 		switch {
 		case info.Name == "codex" && f.importCLI:
-			cred, err = auth.ReadCodexCLIAuth()
+			// Link instead of copying: Codex refresh tokens are single-use,
+			// so the Codex CLI's file stays the one owner of the tokens.
+			var linked auth.Credential
+			if linked, err = auth.ReadCodexCLIAuth(); err == nil {
+				cred = auth.Credential{Link: "codex-cli", IDToken: linked.IDToken, AccountID: linked.AccountID}
+			}
 		case info.Name == "codex" && f.device:
 			cred, err = auth.CodexDeviceLogin(ctx, logf)
 		case info.Name == "codex":
@@ -332,6 +337,9 @@ func listAccounts() ([]accountRow, error) {
 
 func credentialDetail(c auth.Credential) string {
 	var parts []string
+	if c.Link == "codex-cli" {
+		parts = append(parts, "linked to "+auth.CodexCLIAuthPath())
+	}
 	if c.Email != "" {
 		parts = append(parts, c.Email)
 	} else if email := auth.CodexEmail(c.IDToken); email != "" {

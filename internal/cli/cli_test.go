@@ -458,3 +458,88 @@ func TestPrepareSharesInstancesPerAccount(t *testing.T) {
 		t.Fatal("shared instance must keep its own spec")
 	}
 }
+
+func TestAccountFlagOnlyForUnprefixedModels(t *testing.T) {
+	isolate(t)
+	t.Setenv("AI_CLI_IMAGE_PROVIDER", "openai")
+	specs, err := ResolveModelSpecs(context.Background(), "gpt-image-2,fal:fal-ai/flux/dev,fal@team:flux", "", "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specs[0].Account != "work" || specs[1].Account != "" || specs[2].Account != "team" {
+		t.Fatalf("accounts = %q %q %q", specs[0].Account, specs[1].Account, specs[2].Account)
+	}
+}
+
+func TestBaseURLRejectedAcrossProviders(t *testing.T) {
+	isolate(t)
+	f := &imageFlags{n: 1, concurrency: 1, timeout: 1, model: "openai:gpt-image-1,fal:flux", baseURL: "http://localhost:1/v1"}
+	if _, _, err := buildRun(context.Background(), f, "x", nil); err == nil || !strings.Contains(err.Error(), "--base-url") {
+		t.Fatalf("err = %v", err)
+	}
+	f.model = "openai:gpt-image-1,openai:gpt-image-2"
+	if _, _, err := buildRun(context.Background(), f, "x", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRefreshStoredReusesNewerTokens(t *testing.T) {
+	isolate(t)
+	_ = auth.Set("grok", "default", auth.Credential{AccessToken: "old", RefreshToken: "r1"}, false)
+	never := func(auth.Credential) bool { return false }
+	always := func(c auth.Credential) bool { return c.AccessToken == "old" }
+	calls := 0
+	refresh := func(c auth.Credential) (auth.Credential, error) {
+		calls++
+		if c.RefreshToken != "r1" {
+			t.Errorf("refresh must use the stored refresh token, got %q", c.RefreshToken)
+		}
+		c.AccessToken, c.RefreshToken = "new", "r2"
+		return c, nil
+	}
+	first, err := auth.RefreshStored("grok", "default", auth.Credential{AccessToken: "old", RefreshToken: "r1"}, false, always, refresh)
+	if err != nil || first.AccessToken != "new" || calls != 1 {
+		t.Fatalf("first = %+v err=%v calls=%d", first, err, calls)
+	}
+	// A second instance still holding the old token reuses the stored one.
+	second, err := auth.RefreshStored("grok", "default", auth.Credential{AccessToken: "old", RefreshToken: "r1"}, true, never, refresh)
+	if err != nil || second.AccessToken != "new" || calls != 1 {
+		t.Fatalf("second = %+v err=%v calls=%d", second, err, calls)
+	}
+	stored, _, _ := auth.Get("grok", "")
+	if stored.RefreshToken != "r2" {
+		t.Fatalf("stored = %+v", stored)
+	}
+}
+
+func TestLegacyKeyKeptInSync(t *testing.T) {
+	isolate(t)
+	_ = os.MkdirAll(auth.ConfigDir(), 0o700)
+	_ = os.WriteFile(auth.Path(), []byte(`{"apiKey":"vck_legacy"}`), 0o600)
+	if err := auth.Set("openai", "", auth.Credential{APIKey: "sk"}, false); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(auth.Path())
+	var doc map[string]any
+	_ = json.Unmarshal(raw, &doc)
+	if doc["apiKey"] != "vck_legacy" {
+		t.Fatalf("legacy root apiKey must be preserved, got %v", doc["apiKey"])
+	}
+}
+
+func TestCodexImportLinks(t *testing.T) {
+	isolate(t)
+	codexHome := os.Getenv("CODEX_HOME")
+	_ = os.MkdirAll(codexHome, 0o700)
+	_ = os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte(`{"tokens":{"access_token":"cli-at","refresh_token":"cli-rt","account_id":"acct"}}`), 0o600)
+	_ = auth.Set("codex", "default", auth.Credential{Link: "codex-cli"}, false)
+	info := mustInfo(t, "codex")
+	cfg, ra, err := resolveConfig(info, "", Overrides{})
+	if err != nil || cfg.OAuth == nil || cfg.OAuth.AccessToken != "cli-at" || ra.Source != "codex-cli" || ra.Account != "default" {
+		t.Fatalf("cfg=%+v ra=%+v err=%v", cfg.OAuth, ra, err)
+	}
+	stored, _, _ := auth.Get("codex", "default")
+	if stored.RefreshToken != "" {
+		t.Fatal("linked accounts must not copy the refresh token")
+	}
+}

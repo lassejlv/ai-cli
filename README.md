@@ -19,7 +19,7 @@ agent-friendly interface (`--json` on every command, `ai schema`, `ai mcp`).
 | fal | `fal` | API key (`FAL_KEY`) |
 | Replicate | `replicate` | API token (`REPLICATE_API_TOKEN`) |
 | Black Forest Labs | `bfl` | API key (`BFL_API_KEY`) |
-| Google Gemini / Imagen | `google` | API key (`GEMINI_API_KEY`) |
+| Google Gemini | `google` | API key (`GEMINI_API_KEY`) |
 | Stability AI | `stability` | API key (`STABILITY_API_KEY`) |
 | OpenRouter | `openrouter` | API key (`OPENROUTER_API_KEY`) |
 
@@ -52,7 +52,7 @@ echo "$OPENAI_API_KEY" | ai login openai   # reads the key from stdin
 ai login openai --base-url http://localhost:8080/v1 --account local   # OpenAI-compatible server
 ai login codex                             # ChatGPT subscription, browser sign-in
 ai login codex --device                    # headless: device code
-ai login codex --import                    # reuse ~/.codex/auth.json from the Codex CLI
+ai login codex --import                    # link the Codex CLI login in ~/.codex/auth.json
 ai login grok                              # SuperGrok / X Premium, browser sign-in
 ai login grok --device
 ai login higgsfield                        # prompts for key ID and secret
@@ -65,8 +65,11 @@ Stability AI, OpenRouter), the key is checked before it is saved; pass
 account is named explicitly.
 
 When no `codex` account is saved, `ai` uses the tokens of an existing
-`codex login` from `~/.codex/auth.json` and writes refreshed tokens back so
-both tools stay signed in.
+`codex login` from `~/.codex/auth.json`. `--import` saves a named account
+that links to that file instead of copying it. Refreshed tokens are written
+back so both tools stay signed in; subscription refresh tokens are single-use,
+so they must have one owner. Token refreshes take a lock shared across
+processes, so parallel `ai` runs do not spend the same refresh token twice.
 
 Subscription sign-in uses the same OAuth clients as the official Codex and
 Grok CLIs, and generation counts toward your plan's usage limits. Access to
@@ -144,12 +147,13 @@ first.
     --param key=value          Provider option (repeatable, see below)
     --provider-options <file>  JSON options keyed by provider name
     --headers <file>           JSON object of extra HTTP headers
-    --base-url <url>           Override the provider API base URL
+    --base-url <url>           Override the API base URL (single-provider runs)
     --scope <team>             AI Gateway team ID or slug
     --max-images-per-call <n>  Batching limit per provider call
 -p, --concurrency <n>          Parallel models and batches (default 4)
     --timeout <seconds>        Per-request timeout (default 300)
-    --max-retries <n>          Retries for 429/5xx/network errors (default 2)
+    --max-retries <n>          Retries for transient errors (default 2); paid submits
+                               only retry on 429, 503 or a refused connection
 -o, --output <path>            Output file or directory (trailing / creates a directory)
     --raw                      Write raw image bytes to stdout (single image)
     --base64                   Print each image as base64, one per line

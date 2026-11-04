@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lassejlv/ai-cli/internal/auth"
 	"github.com/lassejlv/ai-cli/internal/media"
@@ -517,5 +518,38 @@ func TestExtractSVG(t *testing.T) {
 	}
 	if ExtractSVG("no markup") != "" {
 		t.Fatal("expected empty")
+	}
+}
+
+func TestRetryPolicyProtectsPaidSubmits(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	if _, err := do(ctx, call{Provider: "t", URL: srv.URL, JSON: map[string]any{}, MaxRetries: 2}); err == nil {
+		t.Fatal("expected error")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("a POST that may have started paid work must not be retried on 502, got %d calls", calls.Load())
+	}
+	calls.Store(0)
+	_, _ = do(ctx, call{Provider: "t", Method: http.MethodGet, URL: srv.URL, MaxRetries: 1})
+	if calls.Load() != 2 {
+		t.Fatalf("GET polls should retry, got %d calls", calls.Load())
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	if parseRetryAfter("") != -1 || parseRetryAfter("bogus") != -1 {
+		t.Fatal("absent or invalid values are -1")
+	}
+	if parseRetryAfter("120") != 120*time.Second {
+		t.Fatal("seconds above 60 must be honored")
+	}
+	if d := parseRetryAfter(time.Now().Add(30 * time.Second).UTC().Format(http.TimeFormat)); d < 25*time.Second || d > 31*time.Second {
+		t.Fatalf("http-date gave %s", d)
 	}
 }

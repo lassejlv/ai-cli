@@ -31,6 +31,9 @@ type Credential struct {
 	TokenEndpoint string `json:"tokenEndpoint,omitempty"`
 	// Email is a display label for OAuth accounts.
 	Email string `json:"email,omitempty"`
+	// Link points the account at another tool's credentials ("codex-cli"),
+	// so rotating refresh tokens have a single owner.
+	Link string `json:"link,omitempty"`
 }
 
 // ProviderAccounts holds the named accounts of one provider.
@@ -45,6 +48,10 @@ type File struct {
 	APIKey          string                       `json:"apiKey,omitempty"`
 	DefaultProvider string                       `json:"defaultProvider,omitempty"`
 	Providers       map[string]*ProviderAccounts `json:"providers,omitempty"`
+
+	// hadLegacy records that the file carried the TypeScript CLI's root apiKey,
+	// which is kept in sync so that CLI stays signed in.
+	hadLegacy bool
 }
 
 var mu sync.Mutex
@@ -100,6 +107,7 @@ func load() (*File, error) {
 		}
 	}
 	if f.APIKey != "" {
+		f.hadLegacy = true
 		p := f.provider("gateway")
 		if _, ok := p.Accounts[DefaultAccount]; !ok {
 			p.Accounts[DefaultAccount] = Credential{APIKey: f.APIKey}
@@ -179,29 +187,66 @@ func save(f *File) error {
 			delete(f.Providers, name)
 		}
 	}
-	data, err := json.MarshalIndent(f, "", "  ")
+	out := *f
+	out.APIKey = ""
+	if f.hadLegacy {
+		if c, _, ok := f.Lookup("gateway", ""); ok {
+			out.APIKey = c.APIKey
+		}
+	}
+	data, err := json.MarshalIndent(&out, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := Path() + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, Path())
+	return writeFileAtomic(Path(), append(data, '\n'))
 }
 
 // Update applies fn to the stored file under a lock and saves the result.
 func Update(fn func(*File) error) error {
 	mu.Lock()
 	defer mu.Unlock()
-	f, err := load()
-	if err != nil {
-		return err
-	}
-	if err := fn(f); err != nil {
-		return err
-	}
-	return save(f)
+	return withFileLock(Path(), func() error {
+		f, err := load()
+		if err != nil {
+			return err
+		}
+		if err := fn(f); err != nil {
+			return err
+		}
+		return save(f)
+	})
+}
+
+// RefreshFunc exchanges a credential's refresh token for new tokens.
+type RefreshFunc func(Credential) (Credential, error)
+
+// RefreshStored refreshes a saved OAuth account under the auth file lock.
+// When another process already refreshed it, the stored tokens are reused
+// instead of spending the (single-use) refresh token again.
+func RefreshStored(provider, account string, current Credential, force bool, expiring func(Credential) bool, refresh RefreshFunc) (Credential, error) {
+	var result Credential
+	err := Update(func(f *File) error {
+		stored, _, ok := f.Lookup(provider, account)
+		if !ok {
+			stored = current
+		}
+		if stored.AccessToken != current.AccessToken && !expiring(stored) {
+			result = stored
+			return nil
+		}
+		if !force && !expiring(stored) {
+			result = stored
+			return nil
+		}
+		next, err := refresh(stored)
+		if err != nil {
+			return err
+		}
+		f.provider(provider).Accounts[account] = next
+		result = next
+		return nil
+	})
+	return result, err
 }
 
 // Get returns a stored credential and the resolved account name.

@@ -289,58 +289,67 @@ type GatewayModel struct {
 }
 
 var (
-	catalogOnce sync.Once
+	catalogMu   sync.Mutex
 	catalog     []GatewayModel
-	catalogErr  error
+	catalogOK   bool
 	languageIDs = map[string]bool{}
 )
 
 // GatewayImageModels fetches image-capable models from the AI Gateway catalog.
+// Only a successful fetch is cached, so a long-running MCP server recovers
+// from a transient network error.
 func GatewayImageModels(ctx context.Context) ([]GatewayModel, error) {
-	catalogOnce.Do(func() {
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		base := gatewayOrigin
-		if v := os.Getenv("AI_GATEWAY_BASE_URL"); v != "" {
-			base = gatewayOriginURL(Config{BaseURL: v})
-		}
-		res, err := do(ctx, call{Provider: "AI Gateway", Method: http.MethodGet, URL: base + "/v1/models"})
-		if err != nil {
-			catalogErr = err
-			return
-		}
-		var parsed struct {
-			Data []GatewayModel `json:"data"`
-		}
-		if err := json.Unmarshal(res.Body, &parsed); err != nil {
-			catalogErr = fmt.Errorf("invalid AI Gateway model catalog: %w", err)
-			return
-		}
-		for _, m := range parsed.Data {
-			isImageGen := false
-			for _, t := range m.Tags {
-				if t == "image-generation" {
-					isImageGen = true
-				}
-			}
-			if m.Type == "image" || (m.Type == "language" && isImageGen) {
-				catalog = append(catalog, m)
-				if m.Type == "language" {
-					languageIDs[m.ID] = true
-				}
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	if catalogOK {
+		return catalog, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	base := gatewayOrigin
+	if v := os.Getenv("AI_GATEWAY_BASE_URL"); v != "" {
+		base = gatewayOriginURL(Config{BaseURL: v})
+	}
+	res, err := do(ctx, call{Provider: "AI Gateway", Method: http.MethodGet, URL: base + "/v1/models"})
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Data []GatewayModel `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body, &parsed); err != nil {
+		return nil, fmt.Errorf("invalid AI Gateway model catalog: %w", err)
+	}
+	var models []GatewayModel
+	ids := map[string]bool{}
+	for _, m := range parsed.Data {
+		isImageGen := false
+		for _, t := range m.Tags {
+			if t == "image-generation" {
+				isImageGen = true
 			}
 		}
-	})
-	return catalog, catalogErr
+		if m.Type == "image" || (m.Type == "language" && isImageGen) {
+			models = append(models, m)
+			if m.Type == "language" {
+				ids[m.ID] = true
+			}
+		}
+	}
+	catalog, languageIDs, catalogOK = models, ids, true
+	return catalog, nil
 }
 
 // IsGatewayLanguageImageModel reports whether a gateway model generates images
 // through chat completions rather than the image-model endpoint.
 func IsGatewayLanguageImageModel(model string) bool {
-	if languageIDs[model] {
+	catalogMu.Lock()
+	known, ok := languageIDs[model], catalogOK
+	catalogMu.Unlock()
+	if known {
 		return true
 	}
-	if len(catalog) > 0 {
+	if ok {
 		return false
 	}
 	m := strings.ToLower(model)

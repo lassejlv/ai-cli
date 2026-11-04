@@ -217,7 +217,7 @@ func Detect(data []byte) string {
 		return "image/gif"
 	case len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP":
 		return "image/webp"
-	case bytes.HasPrefix(data, []byte("BM")):
+	case isBMP(data):
 		return "image/bmp"
 	case bytes.HasPrefix(data, []byte{0x49, 0x49, 0x2a, 0x00}), bytes.HasPrefix(data, []byte{0x4d, 0x4d, 0x00, 0x2a}):
 		return "image/tiff"
@@ -237,6 +237,22 @@ func Detect(data []byte) string {
 		return "image/svg+xml"
 	}
 	return "application/octet-stream"
+}
+
+// isBMP checks the BMP file and DIB headers, not just the "BM" magic, so text
+// such as "BMW in the rain" is not mistaken for an image.
+func isBMP(data []byte) bool {
+	if len(data) < 26 || data[0] != 'B' || data[1] != 'M' {
+		return false
+	}
+	fileSize := int(data[2]) | int(data[3])<<8 | int(data[4])<<16 | int(data[5])<<24
+	dib := int(data[14]) | int(data[15])<<8 | int(data[16])<<16 | int(data[17])<<24
+	switch dib {
+	case 12, 40, 52, 56, 64, 108, 124:
+	default:
+		return false
+	}
+	return fileSize == 0 || (fileSize >= 26 && fileSize <= len(data)+1<<20)
 }
 
 // IsImage reports whether bytes look like a supported image.

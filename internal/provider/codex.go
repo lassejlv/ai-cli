@@ -65,20 +65,25 @@ func (c *codex) MaxImagesPerCall(string) int { return 1 }
 func (c *codex) credential(ctx context.Context, force bool) (auth.Credential, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !force && !auth.TokenExpiring(c.cred.AccessToken, 2*time.Minute) {
+	expiring := func(c auth.Credential) bool { return auth.TokenExpiring(c.AccessToken, 2*time.Minute) }
+	if !force && !expiring(c.cred) {
 		return c.cred, nil
 	}
-	refreshed, err := auth.RefreshCodex(ctx, c.cred)
+	refresh := func(c auth.Credential) (auth.Credential, error) { return auth.RefreshCodex(ctx, c) }
+	var (
+		next auth.Credential
+		err  error
+	)
+	if c.cfg.RefreshOAuth != nil {
+		next, err = c.cfg.RefreshOAuth(c.cred, force, expiring, refresh)
+	} else {
+		next, err = refresh(c.cred)
+	}
 	if err != nil {
 		return c.cred, err
 	}
-	c.cred = refreshed
-	if c.cfg.SaveOAuth != nil {
-		if err := c.cfg.SaveOAuth(refreshed); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not save refreshed Codex tokens: %v\n", err)
-		}
-	}
-	return refreshed, nil
+	c.cred = next
+	return next, nil
 }
 
 func (c *codex) headers(cred auth.Credential, extra map[string]string) map[string]string {

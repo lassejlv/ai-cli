@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +26,8 @@ type APIError struct {
 	Status   int
 	Message  string
 	Body     string
+	// RetryAfter is the server's requested delay, or -1 when absent.
+	RetryAfter time.Duration
 }
 
 func (e *APIError) Error() string {
@@ -51,6 +54,8 @@ type call struct {
 	ContentType string
 	MaxRetries  int
 	Client      *http.Client
+	// Idempotent allows retrying a POST after it may have reached the server.
+	Idempotent bool
 }
 
 // response is a successful HTTP response.
@@ -91,13 +96,19 @@ func do(ctx context.Context, c call) (*response, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
+	// Generation submits are paid and not idempotent: only retry them when the
+	// provider cannot have started work (connection refused, 429, 503).
+	idempotent := c.Idempotent || method == http.MethodGet || method == http.MethodHead || method == http.MethodPut
 	var lastErr error
 	for attempt := 0; attempt <= c.MaxRetries; attempt++ {
 		if attempt > 0 {
 			delay := backoff(attempt, lastErr)
+			if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < delay {
+				return nil, lastErr
+			}
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, timeoutError(ctx, ctx.Err())
 			case <-time.After(delay):
 			}
 		}
@@ -122,7 +133,10 @@ func do(ctx context.Context, c call) (*response, error) {
 				return nil, timeoutError(ctx, err)
 			}
 			lastErr = fmt.Errorf("%s: %w", c.Provider, err)
-			continue
+			if idempotent || isDialError(err) {
+				continue
+			}
+			return nil, lastErr
 		}
 		data, err := io.ReadAll(io.LimitReader(res.Body, media.MaxDownloadBytes))
 		res.Body.Close()
@@ -130,22 +144,32 @@ func do(ctx context.Context, c call) (*response, error) {
 			if ctx.Err() != nil {
 				return nil, timeoutError(ctx, err)
 			}
-			lastErr = fmt.Errorf("%s: %w", c.Provider, err)
-			continue
+			lastErr = fmt.Errorf("%s: reading response: %w", c.Provider, err)
+			if idempotent {
+				continue
+			}
+			return nil, lastErr
 		}
 		if res.StatusCode >= 200 && res.StatusCode <= 299 {
 			return &response{Status: res.StatusCode, Headers: res.Header, Body: data}, nil
 		}
-		apiErr := &APIError{Provider: c.Provider, Status: res.StatusCode, Message: errorMessage(data), Body: string(data)}
-		if ra := res.Header.Get("Retry-After"); ra != "" {
-			apiErr.Body = "retry-after:" + ra + "\n" + apiErr.Body
-		}
+		apiErr := &APIError{Provider: c.Provider, Status: res.StatusCode, Message: errorMessage(data), Body: string(data),
+			RetryAfter: parseRetryAfter(res.Header.Get("Retry-After"))}
 		lastErr = apiErr
-		if !apiErr.Retryable() {
+		retry := apiErr.Retryable()
+		if !idempotent {
+			retry = apiErr.Status == http.StatusTooManyRequests || apiErr.Status == http.StatusServiceUnavailable
+		}
+		if !retry {
 			return nil, apiErr
 		}
 	}
 	return nil, lastErr
+}
+
+func isDialError(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "dial"
 }
 
 func timeoutError(ctx context.Context, err error) error {
@@ -155,13 +179,25 @@ func timeoutError(ctx context.Context, err error) error {
 	return err
 }
 
+// parseRetryAfter reads delta-seconds or an HTTP date.
+func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return -1
+	}
+	if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		return max(time.Until(t), 0)
+	}
+	return -1
+}
+
 func backoff(attempt int, lastErr error) time.Duration {
 	var apiErr *APIError
-	if errors.As(lastErr, &apiErr) && strings.HasPrefix(apiErr.Body, "retry-after:") {
-		line := strings.SplitN(strings.TrimPrefix(apiErr.Body, "retry-after:"), "\n", 2)[0]
-		if secs, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && secs >= 0 && secs <= 60 {
-			return time.Duration(secs) * time.Second
-		}
+	if errors.As(lastErr, &apiErr) && apiErr.RetryAfter >= 0 {
+		return apiErr.RetryAfter
 	}
 	base := time.Duration(1<<(attempt-1)) * 2 * time.Second
 	return base + time.Duration(rand.Int64N(int64(500*time.Millisecond)))
