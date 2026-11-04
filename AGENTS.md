@@ -35,3 +35,6 @@
   list and, if agents need the flag, the `generate_image` schema in
   `internal/cli/mcp.go`.
 - Keep stdout machine-readable: progress, warnings and previews go to stderr.
+- Releases: push a `vX.Y.Z` tag. `.github/workflows/release.yml` runs
+  GoReleaser with `.goreleaser.yaml`; the version is injected into
+  `internal/cli.Version` through ldflags.

@@ -25,11 +25,23 @@ agent-friendly interface (`--json` on every command, `ai schema`, `ai mcp`).
 
 ## Install
 
+Download a prebuilt binary for Linux, macOS or Windows (amd64 and arm64) from
+the [latest release](https://github.com/lassejlv/ai-cli/releases/latest), or:
+
+```bash
+# macOS / Linux: pick the archive for your OS and CPU
+VERSION=0.1.0 OS=darwin ARCH=arm64
+curl -sSL "https://github.com/lassejlv/ai-cli/releases/download/v${VERSION}/ai_${VERSION}_${OS}_${ARCH}.tar.gz" | tar xz ai
+sudo mv ai /usr/local/bin/
+```
+
+Each release includes `checksums.txt` for verifying downloads. With Go 1.24+:
+
 ```bash
 go install github.com/lassejlv/ai-cli/cmd/ai@latest
 ```
 
-Or build from a checkout with `make build`. Requires Go 1.24+.
+Or build from a checkout with `make build`.
 
 ## Quick start
 
@@ -277,6 +289,21 @@ make build   # ./ai
 Providers live in `internal/provider`, one file each. A provider registers an
 `Info` (name, default model, auth type, env vars) and implements `Generate`
 and `MaxImagesPerCall`. Tests run every provider against a mock HTTP server.
+
+## Releasing
+
+Push a version tag; the release workflow runs the tests and
+[GoReleaser](https://goreleaser.com) publishes a GitHub release with archives
+for every platform and a checksum file:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Tags with a suffix such as `v0.2.0-rc.1` are published as prereleases. CI runs
+`goreleaser check` and a snapshot build on every push, so release breakage
+shows up before tagging.
 
 ## License
 
