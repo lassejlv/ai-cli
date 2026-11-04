@@ -192,7 +192,22 @@ func providerOptionsFor(name string, opts RunOptions) map[string]any {
 	if v, ok := opts.ProviderOptions[name].(map[string]any); ok {
 		own = v
 	}
-	return provider.Merge(own, opts.Params)
+	return provider.Merge(provider.Merge(own, globalParams(opts.Params)), scopedParams(name, opts.Params))
+}
+
+func globalParams(params map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range params {
+		if !strings.HasPrefix(k, "provider:") {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func scopedParams(name string, params map[string]any) map[string]any {
+	v, _ := params["provider:"+name].(map[string]any)
+	return v
 }
 
 // Run generates images for every model and writes the outputs.
@@ -449,11 +464,12 @@ func runModel(ctx context.Context, m preparedModel, opts RunOptions) *ModelResul
 // by the model's creator (openai/gpt-image-2 -> "openai"), which is where the
 // Gateway forwards provider-specific settings.
 func gatewayOptions(model string, opts RunOptions) map[string]any {
-	if len(opts.Params) == 0 {
+	params := provider.Merge(globalParams(opts.Params), scopedParams("gateway", opts.Params))
+	if len(params) == 0 {
 		return opts.ProviderOptions
 	}
 	creator, _, _ := strings.Cut(model, "/")
-	return provider.Merge(opts.ProviderOptions, map[string]any{creator: opts.Params})
+	return provider.Merge(opts.ProviderOptions, map[string]any{creator: params})
 }
 
 func addUsage(a, b *provider.Usage) *provider.Usage {

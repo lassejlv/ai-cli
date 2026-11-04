@@ -18,6 +18,7 @@ import (
 
 	"github.com/lassejlv/ai-cli/internal/media"
 	"github.com/lassejlv/ai-cli/internal/output"
+	"github.com/lassejlv/ai-cli/internal/provider"
 )
 
 const (
@@ -94,7 +95,7 @@ Run without a prompt in a terminal to open the interactive TUI.`,
 	fl.StringVar(&f.aspectRatio, "aspect-ratio", "", "Aspect ratio W:H, e.g. 16:9")
 	fl.StringVar(&f.seed, "seed", "", "Generation seed, including 0")
 	fl.StringVar(&f.providerOptions, "provider-options", "", "JSON file of options keyed by provider name")
-	fl.StringArrayVar(&f.params, "param", nil, "Provider option key=value (repeatable; dotted keys nest, values parse as JSON)")
+	fl.StringArrayVar(&f.params, "param", nil, "Provider option key=value (repeatable; dotted keys nest, values parse as JSON, provider:key scopes to one provider)")
 	fl.StringVar(&f.headers, "headers", "", "JSON file of extra HTTP headers")
 	fl.IntVar(&f.maxRetries, "max-retries", 2, "Retries for transient errors (0 disables)")
 	fl.StringVar(&f.baseURL, "base-url", "", "Override the provider API base URL")
@@ -313,7 +314,9 @@ func buildRun(ctx context.Context, f *imageFlags, prompt string, stdinImage *med
 	return opts, specs, nil
 }
 
-// parseParams turns key=value pairs into a nested options object.
+// parseParams turns key=value pairs into a nested options object. A
+// "provider:" prefix (higgsfield:enhance_prompt=true) scopes a value to one
+// provider; scoped values are returned under the key "provider:<name>".
 func parseParams(pairs []string) (map[string]any, error) {
 	out := map[string]any{}
 	for _, pair := range pairs {
@@ -322,13 +325,25 @@ func parseParams(pairs []string) (map[string]any, error) {
 		if !ok || key == "" {
 			return nil, fmt.Errorf("--param must be key=value, got %q", pair)
 		}
+		root := out
+		if scope, rest, scoped := strings.Cut(key, ":"); scoped {
+			if _, known := provider.Lookup(scope); !known {
+				return nil, fmt.Errorf("--param %q: unknown provider %q", pair, scope)
+			}
+			bucket, _ := out["provider:"+strings.ToLower(scope)].(map[string]any)
+			if bucket == nil {
+				bucket = map[string]any{}
+				out["provider:"+strings.ToLower(scope)] = bucket
+			}
+			root, key = bucket, rest
+		}
 		var parsed any = value
 		var decoded any
 		if err := json.Unmarshal([]byte(value), &decoded); err == nil {
 			parsed = decoded
 		}
 		parts := strings.Split(key, ".")
-		node := out
+		node := root
 		for _, part := range parts[:len(parts)-1] {
 			child, ok := node[part].(map[string]any)
 			if !ok {

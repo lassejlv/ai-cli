@@ -206,7 +206,10 @@ func GrokDeviceLogin(ctx context.Context, log func(string)) (Credential, error) 
 	if log != nil {
 		log(fmt.Sprintf("Open %s and confirm this code:\n\n  %s\n", display, device.UserCode))
 	}
-	interval := time.Duration(max(device.Interval, 5)) * time.Second
+	interval := 5 * time.Second
+	if device.Interval > 0 {
+		interval = time.Duration(device.Interval) * time.Second
+	}
 	deadline := time.Now().Add(time.Duration(max(device.ExpiresIn, 60)) * time.Second)
 	for time.Now().Before(deadline) {
 		select {
