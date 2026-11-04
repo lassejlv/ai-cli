@@ -87,7 +87,7 @@ Run without a prompt in a terminal to open the interactive TUI.`,
 	fl := cmd.Flags()
 	fl.StringVarP(&f.model, "model", "m", "", "Model ID, provider[@account]:model; comma-separated for multiple models")
 	fl.StringVar(&f.providerName, "provider", "", "Provider for unprefixed model IDs")
-	fl.StringVar(&f.account, "account", "", "Saved account for unprefixed model IDs (see `ai accounts`)")
+	fl.StringVar(&f.account, "account", "", "Saved account name for unprefixed model IDs (see: ai accounts)")
 	fl.StringVarP(&f.outputPath, "output", "o", "", "Output file or directory (use a trailing / for a new directory)")
 	fl.IntVarP(&f.n, "n", "n", 1, "Number of images per model")
 	fl.StringArrayVarP(&f.images, "images", "i", nil, "Reference image path, URL or data URL (repeatable)")
