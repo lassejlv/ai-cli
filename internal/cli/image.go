@@ -56,6 +56,7 @@ type imageFlags struct {
 	noSave          bool
 	dryRun          bool
 	interactive     bool
+	noStdin         bool
 }
 
 func newImageCmd() *cobra.Command {
@@ -114,6 +115,7 @@ Run without a prompt in a terminal to open the interactive TUI.`,
 	fl.BoolVar(&f.noSave, "no-save", false, "Do not write image files (preview or stdout only)")
 	fl.BoolVar(&f.dryRun, "dry-run", false, "Print the resolved request as JSON without calling any provider")
 	fl.BoolVarP(&f.interactive, "interactive", "I", false, "Open the interactive TUI, prefilled with these flags")
+	fl.BoolVar(&f.noStdin, "no-stdin", false, "Do not read a prompt or reference image from stdin (also AI_CLI_NO_STDIN=1)")
 	return cmd
 }
 
@@ -126,7 +128,7 @@ func runImage(cmd *cobra.Command, f *imageFlags, args []string) error {
 	stdoutTTY := output.IsTTY(os.Stdout)
 
 	var stdinImage *media.Image
-	if !stdinTTY && !f.interactive {
+	if !stdinTTY && !f.interactive && !f.noStdin && os.Getenv("AI_CLI_NO_STDIN") == "" {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return usageErr("could not read stdin: %v", err)

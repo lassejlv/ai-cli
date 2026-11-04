@@ -159,31 +159,40 @@ type preparedModel struct {
 	err     error
 }
 
-// prepare instantiates providers for each spec.
+// prepare instantiates providers for each spec. Specs that share a provider
+// and account share one instance, so OAuth refresh tokens rotate only once.
 func prepare(specs []ModelSpec, ov Overrides) []preparedModel {
 	out := make([]preparedModel, len(specs))
+	cache := map[string]preparedModel{}
 	for i, spec := range specs {
-		out[i].spec = spec
-		info, ok := provider.Lookup(spec.Provider)
+		key := spec.Provider + "@" + spec.Account
+		m, ok := cache[key]
 		if !ok {
-			out[i].err = fmt.Errorf("unknown provider %q", spec.Provider)
-			continue
+			m = prepareOne(spec, ov)
+			cache[key] = m
 		}
-		cfg, ra, err := resolveConfig(info, spec.Account, ov)
-		out[i].account = ra
-		if err != nil {
-			out[i].err = err
-			continue
-		}
-		cfg.HTTP = &http.Client{}
-		impl, err := info.New(cfg)
-		if err != nil {
-			out[i].err = err
-			continue
-		}
-		out[i].impl = impl
+		m.spec = spec
+		out[i] = m
 	}
 	return out
+}
+
+func prepareOne(spec ModelSpec, ov Overrides) preparedModel {
+	m := preparedModel{spec: spec}
+	info, ok := provider.Lookup(spec.Provider)
+	if !ok {
+		m.err = fmt.Errorf("unknown provider %q", spec.Provider)
+		return m
+	}
+	cfg, ra, err := resolveConfig(info, spec.Account, ov)
+	m.account = ra
+	if err != nil {
+		m.err = err
+		return m
+	}
+	cfg.HTTP = &http.Client{}
+	m.impl, m.err = info.New(cfg)
+	return m
 }
 
 // providerOptionsFor returns the options passed to one provider.

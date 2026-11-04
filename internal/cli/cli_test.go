@@ -441,3 +441,20 @@ func TestMCPGenerate(t *testing.T) {
 		t.Fatalf("expected 1 saved file, got %d", len(entries))
 	}
 }
+
+func TestPrepareSharesInstancesPerAccount(t *testing.T) {
+	isolate(t)
+	_ = auth.Set("codex", "a", auth.Credential{AccessToken: "t1"}, false)
+	_ = auth.Set("codex", "b", auth.Credential{AccessToken: "t2"}, false)
+	specs := []ModelSpec{{Provider: "codex", Account: "a", Model: "gpt-image-2"}, {Provider: "codex", Account: "a", Model: "gpt-5.5"}, {Provider: "codex", Account: "b", Model: "gpt-image-2"}}
+	ms := prepare(specs, Overrides{})
+	if ms[0].impl != ms[1].impl {
+		t.Fatal("same account should share one provider instance")
+	}
+	if ms[0].impl == ms[2].impl {
+		t.Fatal("different accounts must not share an instance")
+	}
+	if ms[1].spec.Model != "gpt-5.5" {
+		t.Fatal("shared instance must keep its own spec")
+	}
+}

@@ -158,6 +158,7 @@ first.
     --no-preview               Disable Kitty graphics previews
     --json                     JSON manifest on stdout
     --dry-run                  Print the resolved request without calling a provider
+    --no-stdin                 Never read stdin (also AI_CLI_NO_STDIN=1)
 -q, --quiet                    Suppress progress
 -I, --interactive              Open the TUI prefilled with these flags
 ```
@@ -218,6 +219,8 @@ between steps. Set `AI_CLI_NO_TUI=1` to never open it automatically.
 - `ai schema` describes every command, flag, provider, environment variable
   and exit code as JSON.
 - The TUI never opens when stdin or stdout is not a terminal.
+- `ai image` reads a piped stdin until EOF. If your harness leaves stdin open,
+  pass `--no-stdin` or set `AI_CLI_NO_STDIN=1`.
 - Non-interactive login: pipe the key on stdin, or pass `--api-key` (and
   `--api-secret` for Higgsfield).
 
@@ -256,6 +259,7 @@ between steps. Set `AI_CLI_NO_TUI=1` to never open it automatically.
 | `AI_CLI_PREVIEW` | `1` forces Kitty previews on, `0` disables them |
 | `AI_CLI_PREVIEW_WIDTH` | Preview width in terminal columns |
 | `AI_CLI_NO_TUI` | Never open the TUI automatically |
+| `AI_CLI_NO_STDIN` | Never read a prompt or image from stdin |
 | `AI_CLI_CONFIG_DIR` | Directory for `auth.json` (default `~/.config/ai-cli`) |
 | `NO_COLOR`, `FORCE_COLOR` | Color output |
 

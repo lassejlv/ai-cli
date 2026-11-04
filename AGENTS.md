@@ -9,6 +9,8 @@
   (model IDs), `ai accounts --json`, `ai schema` (all commands and flags).
 - Check before spending: `ai image --dry-run ...` resolves models, accounts
   and options without calling a provider.
+- Pass `--no-stdin` (or set `AI_CLI_NO_STDIN=1`) when your stdin stays open;
+  otherwise `ai image` waits for EOF on a piped stdin.
 - Never rely on the TUI. It only opens when stdin and stdout are terminals; set
   `AI_CLI_NO_TUI=1` to be sure.
 - Images as data: `--base64` or `--data-url` (one line per image), or

@@ -115,6 +115,10 @@ func CodexBrowserLogin(ctx context.Context, opts CodexLoginOptions) (Credential,
 		done <- result{cred: cred}
 	})
 	go func() { _ = srv.Serve(ln) }()
+	// The redirect URI says "localhost", which browsers may resolve to ::1.
+	if ln6, err := net.Listen("tcp", "[::1]:1455"); err == nil {
+		go func() { _ = srv.Serve(ln6) }()
+	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
