@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -49,7 +51,7 @@ func Load(ref, optionName string) (Image, error) {
 		case "http", "https":
 			return Image{URL: u.String()}, nil
 		case "file":
-			return readFile(u.Path)
+			return readFile(fileURLPath(u))
 		default:
 			return Image{}, fmt.Errorf("unsupported reference image URL scheme %q; use a file path, file:// URL, http(s) URL, or data URL", u.Scheme+":")
 		}
@@ -68,6 +70,22 @@ func LoadAll(refs []string, optionName string) ([]Image, error) {
 		out = append(out, img)
 	}
 	return out, nil
+}
+
+// fileURLPath converts a file:// URL to a local path, including Windows
+// forms such as file:///C:/dir/a.png and file://host/share/a.png.
+func fileURLPath(u *url.URL) string {
+	p := u.Path
+	if runtime.GOOS == "windows" {
+		if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+			p = p[1:]
+		}
+		if u.Host != "" && u.Host != "localhost" {
+			p = `\\` + u.Host + p
+		}
+		return filepath.FromSlash(p)
+	}
+	return p
 }
 
 func readFile(path string) (Image, error) {

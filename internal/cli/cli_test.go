@@ -408,7 +408,7 @@ func TestMCPGenerate(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"generate_image","arguments":{"prompt":"a cat","model":"openai:gpt-image-1","output_dir":"` + outDir + `","return_images":true}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"generate_image","arguments":{"prompt":"a cat","model":"openai:gpt-image-1","output_dir":` + jsonString(outDir) + `,"return_images":true}}}`,
 	}, "\n") + "\n")
 	var out bytes.Buffer
 	if err := serveMCP(context.Background(), in, &out); err != nil {
@@ -542,4 +542,9 @@ func TestCodexImportLinks(t *testing.T) {
 	if stored.RefreshToken != "" {
 		t.Fatal("linked accounts must not copy the refresh token")
 	}
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }

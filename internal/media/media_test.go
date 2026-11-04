@@ -1,8 +1,10 @@
 package media
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,7 +36,11 @@ func TestLoad(t *testing.T) {
 	if err != nil || img.MediaType != "image/png" {
 		t.Fatalf("path: %+v %v", img, err)
 	}
-	if img, err = Load("file://"+path, "images"); err != nil || len(img.Data) != 8 {
+	fileURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+	if !strings.HasPrefix(filepath.ToSlash(path), "/") {
+		fileURL = "file:///" + filepath.ToSlash(path) // Windows: file:///C:/...
+	}
+	if img, err = Load(fileURL, "images"); err != nil || len(img.Data) != 8 {
 		t.Fatalf("file url: %v", err)
 	}
 	if img, err = Load("https://example.com/x.png", "images"); err != nil || !img.IsRemote() {

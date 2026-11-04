@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -46,7 +47,7 @@ func TestTargetAndSuffix(t *testing.T) {
 	if got := Target("out.png", "x", "image/png", "1-2"); got != "out-1-2.png" {
 		t.Fatalf("got %s", got)
 	}
-	if got := Target("dir/", "x", "image/webp", "2-1"); got != "dir/x-2-1.webp" {
+	if got := Target("dir/", "x", "image/webp", "2-1"); got != filepath.Join("dir", "x-2-1.webp") {
 		t.Fatalf("got %s", got)
 	}
 }
