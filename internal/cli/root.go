@@ -61,6 +61,9 @@ Agents: every command supports --json; see ` + "`ai schema`" + ` and ` + "`ai mc
 		newSchemaCmd(),
 		newMCPCmd(),
 		newTUICmd(),
+		newHistoryCmd(),
+		newReplayCmd(false),
+		newReplayCmd(true),
 	)
 	return root
 }

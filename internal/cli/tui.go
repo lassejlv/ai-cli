@@ -68,6 +68,7 @@ func newTUICmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&f.model, "model", "m", "", "Preselect a model (provider[@account]:model)")
 	cmd.Flags().StringVarP(&f.outputPath, "output", "o", "", "Output directory")
+	cmd.Flags().BoolVar(&f.noHistory, "no-history", false, "Do not record runs in local history (also AI_CLI_NO_HISTORY=1)")
 	return cmd
 }
 
@@ -402,6 +403,7 @@ func generateFromState(ctx context.Context, s *tuiState, base *imageFlags) (*Run
 		Output:      expandHome(strings.TrimSpace(s.output)),
 		Mode:        ModeFile,
 		Preview:     !base.noPreview,
+		NoHistory:   base.noHistory,
 		Stdout:      os.Stdout,
 		StdoutIsTTY: true,
 		Overrides:   Overrides{MaxRetries: base.maxRetries, BaseURL: base.baseURL, Scope: base.scope},

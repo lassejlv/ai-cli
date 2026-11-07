@@ -79,7 +79,8 @@ func newSchemaCmd() *cobra.Command {
 					"AI_CLI_OUTPUT_DIR":     "default output directory",
 					"AI_CLI_PREVIEW":        "1 forces Kitty previews on, 0 disables them",
 					"AI_CLI_NO_TUI":         "never open the interactive TUI",
-					"AI_CLI_CONFIG_DIR":     "where auth.json is stored (default ~/.config/ai-cli)",
+					"AI_CLI_CONFIG_DIR":     "where auth.json and history/ are stored (default ~/.config/ai-cli)",
+					"AI_CLI_NO_HISTORY":     "1 disables recording local generation history",
 				},
 			})
 			return nil

@@ -130,6 +130,50 @@ ai providers              # which providers are signed in
 Any model ID the provider accepts works, not only the listed ones, for example
 `fal:fal-ai/some/new-model` or `replicate:owner/model:version`.
 
+### History, reruns and edits
+
+Generations with saved output images are recorded automatically, including runs
+from the interactive studio and MCP. Browse recent runs, repeat a request, or
+use a previous result as the reference for an edit:
+
+```bash
+ai history                              # newest 20 runs
+ai history --json --limit 5              # machine-readable history
+ai history <id>                          # inspect the full saved request as JSON
+ai rerun --last                         # repeat the latest saved request
+ai rerun <id> --param quality=high       # repeat an older request with overrides
+ai edit --last "make the fox younger"
+ai edit --from <id> --image-index 2 "add snow"
+ai rerun --last --dry-run                # inspect without generating
+```
+
+Reruns restore the original prompt, models, saved account selection, reference
+images, mask and generation settings. Explicit flags override saved settings;
+`--param` values merge with saved parameters. Current credentials are resolved
+at execution time. Remote references still depend on their URLs being available.
+Switching to another provider clears saved connection defaults such as a custom
+base URL; supply those explicitly if the new provider needs them.
+Edits use the selected output image and its model, default to one image, and
+accept the same generation flags as `ai image`. Image indices start at 1 across
+all saved outputs in a run. Both commands default to a fresh filename beside the
+previous output; pass `-o` to choose another destination. Reruns submit a new
+request and may produce different images even with the same settings.
+
+History lives in `~/.config/ai-cli/history/` (or `AI_CLI_CONFIG_DIR/history/`).
+It contains prompts, settings, output paths, and copies of local or piped input
+images. API keys, OAuth tokens and custom HTTP headers are not recorded. Runs
+using custom headers or a base URL containing credentials/query parameters
+require those connection flags again when replayed. History files use private
+permissions. Output-only runs (`--no-save`, or stdout without saved files),
+failed runs without saved images, and dry runs do not create history entries.
+Existing images generated before this feature are not imported automatically.
+
+Use `--no-history` for a single run, MCP's `no_history: true`, or
+`AI_CLI_NO_HISTORY=1` to disable recording. Delete the history directory to clear
+saved requests; this leaves generated output files in place. JSON generation
+manifests include `historyId` when recording succeeds. If history cannot be
+written, generation still succeeds and the manifest includes a warning.
+
 ### References and edits
 
 ```bash
@@ -175,6 +219,7 @@ first.
     --json                     JSON manifest on stdout
     --dry-run                  Print the resolved request without calling a provider
     --no-stdin                 Never read stdin (also AI_CLI_NO_STDIN=1)
+    --no-history               Do not record local generation history
 -q, --quiet                    Suppress progress
 -I, --interactive              Open the TUI prefilled with these flags
 ```
@@ -276,7 +321,8 @@ between steps. Set `AI_CLI_NO_TUI=1` to never open it automatically.
 | `AI_CLI_PREVIEW_WIDTH` | Preview width in terminal columns |
 | `AI_CLI_NO_TUI` | Never open the TUI automatically |
 | `AI_CLI_NO_STDIN` | Never read a prompt or image from stdin |
-| `AI_CLI_CONFIG_DIR` | Directory for `auth.json` (default `~/.config/ai-cli`) |
+| `AI_CLI_NO_HISTORY` | `1` disables local generation history |
+| `AI_CLI_CONFIG_DIR` | Directory for `auth.json` and `history/` (default `~/.config/ai-cli`) |
 | `NO_COLOR`, `FORCE_COLOR` | Color output |
 
 ## Development

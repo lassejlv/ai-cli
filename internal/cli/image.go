@@ -57,6 +57,7 @@ type imageFlags struct {
 	dryRun          bool
 	interactive     bool
 	noStdin         bool
+	noHistory       bool
 }
 
 func newImageCmd() *cobra.Command {
@@ -84,6 +85,11 @@ Run without a prompt in a terminal to open the interactive TUI.`,
 			return runImage(cmd, f, args)
 		},
 	}
+	addImageFlags(cmd, f)
+	return cmd
+}
+
+func addImageFlags(cmd *cobra.Command, f *imageFlags) {
 	fl := cmd.Flags()
 	fl.StringVarP(&f.model, "model", "m", "", "Model ID, provider[@account]:model; comma-separated for multiple models")
 	fl.StringVar(&f.providerName, "provider", "", "Provider for unprefixed model IDs")
@@ -116,7 +122,7 @@ Run without a prompt in a terminal to open the interactive TUI.`,
 	fl.BoolVar(&f.dryRun, "dry-run", false, "Print the resolved request as JSON without calling any provider")
 	fl.BoolVarP(&f.interactive, "interactive", "I", false, "Open the interactive TUI, prefilled with these flags")
 	fl.BoolVar(&f.noStdin, "no-stdin", false, "Do not read a prompt or reference image from stdin (also AI_CLI_NO_STDIN=1)")
-	return cmd
+	fl.BoolVar(&f.noHistory, "no-history", false, "Do not record this run in local history (also AI_CLI_NO_HISTORY=1)")
 }
 
 func runImage(cmd *cobra.Command, f *imageFlags, args []string) error {
@@ -159,7 +165,10 @@ func runImage(cmd *cobra.Command, f *imageFlags, args []string) error {
 		return usageErr("%v", err)
 	}
 	opts.StdoutIsTTY = stdoutTTY
+	return executeImage(cmd, f, opts, specs)
+}
 
+func executeImage(cmd *cobra.Command, f *imageFlags, opts RunOptions, specs []ModelSpec) error {
 	if f.dryRun {
 		return writeDryRun(specs, opts)
 	}
@@ -190,6 +199,7 @@ func buildRun(ctx context.Context, f *imageFlags, prompt string, stdinImage *med
 		JSON:        f.json,
 		Quiet:       f.quiet,
 		Preview:     !f.noPreview,
+		NoHistory:   f.noHistory,
 		Stdout:      os.Stdout,
 	}
 	if f.n < 1 {

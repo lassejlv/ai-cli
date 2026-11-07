@@ -44,12 +44,13 @@ type RunOptions struct {
 	Concurrency     int
 	Overrides       Overrides
 
-	Output  string
-	Mode    OutputMode
-	NoSave  bool
-	JSON    bool
-	Quiet   bool
-	Preview bool
+	Output    string
+	Mode      OutputMode
+	NoSave    bool
+	NoHistory bool
+	JSON      bool
+	Quiet     bool
+	Preview   bool
 	// IncludeBase64 adds base64 data to JSON results.
 	IncludeBase64 bool
 
@@ -117,6 +118,8 @@ type RunResult struct {
 	Success   bool           `json:"success"`
 	ElapsedMs int64          `json:"elapsedMs"`
 	Results   []*ModelResult `json:"results"`
+	HistoryID string         `json:"historyId,omitempty"`
+	Warnings  []string       `json:"warnings,omitempty"`
 }
 
 // ExitCode maps results to 0 (all ok), 1 (all failed) or 2 (partial).
@@ -299,6 +302,18 @@ func Run(ctx context.Context, specs []ModelSpec, opts RunOptions) *RunResult {
 	}
 	run := &RunResult{ElapsedMs: time.Since(start).Milliseconds(), Results: results}
 	run.Success = run.ExitCode() == 0
+	if !opts.NoHistory && !opts.NoSave && os.Getenv("AI_CLI_NO_HISTORY") != "1" && firstFile(run) != "" {
+		id, err := saveHistory(models, opts, run)
+		if err != nil {
+			warning := "could not save history: " + err.Error()
+			run.Warnings = append(run.Warnings, warning)
+			if !opts.JSON {
+				fmt.Fprintln(os.Stderr, "Warning: "+warning)
+			}
+		} else {
+			run.HistoryID = id
+		}
+	}
 	return run
 }
 
