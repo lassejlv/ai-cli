@@ -136,6 +136,7 @@ func mcpTools() []map[string]any {
 					"params":          map[string]any{"type": "object", "description": "Provider-specific options, e.g. {\"quality\":\"high\"}"},
 					"output_dir":      str("Directory to save images in"),
 					"return_images":   map[string]any{"type": "boolean", "description": "Also return the images inline (default false)"},
+					"no_history":      map[string]any{"type": "boolean", "description": "Do not record this run in local history (default false)"},
 					"timeout_seconds": map[string]any{"type": "integer", "description": "Per-request timeout (default 300)"},
 				},
 			},
@@ -195,6 +196,7 @@ func mcpGenerate(ctx context.Context, raw json.RawMessage) map[string]any {
 		Params       map[string]any `json:"params"`
 		OutputDir    string         `json:"output_dir"`
 		ReturnImages bool           `json:"return_images"`
+		NoHistory    bool           `json:"no_history"`
 		Timeout      int            `json:"timeout_seconds"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
@@ -202,7 +204,7 @@ func mcpGenerate(ctx context.Context, raw json.RawMessage) map[string]any {
 	}
 	f := &imageFlags{
 		model: a.Model, providerName: a.Provider, account: a.Account, n: max(a.N, 1), size: a.Size, aspectRatio: a.AspectRatio,
-		images: a.Images, mask: a.Mask, maxRetries: 2, concurrency: defaultImageConcurrency, timeout: defaultImageTimeout, json: true,
+		images: a.Images, mask: a.Mask, maxRetries: 2, concurrency: defaultImageConcurrency, timeout: defaultImageTimeout, json: true, noHistory: a.NoHistory,
 	}
 	if a.Timeout > 0 {
 		f.timeout = a.Timeout
